@@ -1,0 +1,188 @@
+<!doctype html>
+<html>
+
+<head>
+	<title>Kafka Log Chart</title>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.13.0/moment.min.js"></script>
+	<script src="js/Chart.min.js"></script>
+	<script src="js/utils.js"></script>
+	<script src='js/jquery.min.js'></script>
+	<script src="https://cdn.datatables.net/1.10.19/js/jquery.dataTables.min.js"></script>
+	<link rel="stylesheet" href="//cdn.datatables.net/1.10.19/css/jquery.dataTables.min.css">
+	<script src="/webjars/sockjs-client/sockjs.min.js"></script>
+	<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+	<script src="/webjars/stomp-websocket/stomp.min.js"></script>
+	<link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+	<style>
+		canvas {
+			-moz-user-select: none;
+			-webkit-user-select: none;
+			-ms-user-select: none;
+		}
+	</style>
+</head>
+
+<body>
+	<div style="width:75%;">
+		<canvas id="canvas"></canvas>
+	</div>
+	<div class="form-group">
+		<div class="row">
+			<label class = "sr-only" for="server_name">Server Name</label>
+		    	<input class="form-control col-2 mb-2 mr-sm-2 mb-sm-0" type="text" id="server_name" placeholder="Server Name"/>
+		    <label class = "sr-only" for="level">Log Level</label>
+		    	<input class="form-control col-2 mb-2 mr-sm-2 mb-sm-0" type="text" id="level" placeholder="Log Level"/>
+		    <label class = "sr-only" for="datepicker1">Start Date</label>
+		    	<input class="form-control col-2 mb-2 mr-sm-2 mb-sm-0" type="datetime-local" id="datepicker1" placeholder="From Date"/>
+		    <label class = "sr-only" for="datepicker1">End Date</label>
+		    	<input class="form-control col-2 mb-2 mr-sm-2 mb-sm-0" type="datetime-local" id="datepicker2" placeholder="To Date"/>
+		    <button type="submit" class="btn btn-primary" onclick="getdata()")>Submit</button>
+	    </div>
+	</div>
+	<div>
+	<table id="example" class="display" style="width:100%">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Level</th>
+                <th>Server</th>
+                <th>Detail</th>
+            </tr>
+        </thead>
+    </table>
+	</div>
+	<br>
+	<br>
+	<script>
+		var timeFormat = 'HH:mm';
+
+		function newDate(days) {
+			return moment().add(days).toDate();
+		}
+
+		function newDateString(days) {
+			return moment().add(days).format(timeFormat);
+		}
+
+		var color = Chart.helpers.color;
+		var config = {
+			type: 'line',
+			data: {
+				labels: [ // Date Objects
+
+				],
+				datasets: []
+			},
+			options: {
+				title: {
+					text: 'Kafka Logs'
+				},
+
+			}
+		};
+
+		$( window ).ready(function() {
+			  connect();
+			});
+
+			function connect() {
+			  var socket = new SockJS('/websocket');
+			  stompClient = Stomp.over(socket);
+			  stompClient.connect({}, function (frame) {
+			      stompClient.subscribe('/topic/pushNotification', function (notification) {
+			          $('#textArea').val(handleData($.parseJSON(notification.body)));
+			       });
+			  });
+			}
+		window.onload = function() {
+			var ctx = document.getElementById('canvas').getContext('2d');
+			window.myLine = new Chart(ctx, config);
+
+		};
+		function handleData(jsonobject){
+			datasetindex=-1;
+			for(index=0; index<config.data.datasets.length; index++){
+				if(jsonobject.server==config.data.datasets[index].label)
+					datasetindex=index;
+
+			}
+			if(datasetindex==-1){
+				addDataset(jsonobject);
+				datasetindex=config.data.datasets.length-1;
+			}
+
+			addData(jsonobject,datasetindex);
+		}
+
+		function addDataset(jsonobject){
+			//var colorName = colorNames[chart.data.datasets.length % colorNames.length];
+					var newColor = Object.keys(window.chartColors)[config.data.datasets.length%8];
+					var newDataset = {
+						label: jsonobject.server,
+						borderColor: newColor,
+						//backgroundColor: color(newColor).alpha(0.5).rgbString(),
+						data: [],
+						fill: false
+					};
+
+					for (var index = 0; index < config.data.labels.length; ++index) {
+						newDataset.data.push(0);
+					}
+
+					config.data.datasets.push(newDataset);
+					window.myLine.update();
+				}
+
+		function addData(jsonobject,datasetindex){
+			newDateTime = round30(jsonobject.datetime);
+			if (config.data.labels.length==0 || config.data.labels[config.data.labels.length-1] < newDateTime ) {
+				config.data.labels.push(newDateTime);
+			}
+						for (var index = 0; index < config.data.datasets.length; index++) {
+							if (config.data.datasets[index].data.length<config.data.labels.length) {
+								config.data.datasets[index].data.push(0);
+							}
+
+						}
+						config.data.datasets[datasetindex].data[config.data.datasets[datasetindex].data.length-1]=config.data.datasets[datasetindex].data[config.data.datasets[datasetindex].data.length-1]+1;
+
+						window.myLine.update();
+
+				}
+		function round30(datetime){
+			var start = moment(datetime);
+			var remainder = 30-(start.minute()%30);
+			var dateTime = moment(start).add(remainder,"minutes").format("YYYY-MM-DD HH:mm");
+			return dateTime;
+		}
+		function getdata(){
+			var servername=document.getElementById("server_name").value;
+			var level=document.getElementById("level").value;
+			var startdate=document.getElementById("datepicker1").value==""?moment("1900-01-01").format("YYYY-MM-DD HH:mm:ss.SSS"):moment(document.getElementById("datepicker1").value).format("YYYY-MM-DD HH:mm:ss.SSS");
+			var enddate=document.getElementById("datepicker2").value==""?moment("2100-01-01").format("YYYY-MM-DD HH:mm:ss.SSS"):moment(document.getElementById("datepicker2").value).format("YYYY-MM-DD HH:mm:ss.SSS");
+			$.ajax({
+        		url: "/GetMessages?server="+servername
+						+ "&level="+level
+						+ "&startdate="+startdate
+						+ "&enddate="+enddate}).then(function(data) {
+    				var t = $('#example').DataTable();
+    				t.clear();
+    				var obj=data;
+       				for(i=0; i<obj.length; i++){
+			        t.row.add( [
+			            obj[i].datetime,
+			            obj[i].level,
+			            obj[i].server,
+			            obj[i].detail
+			        ] ).draw( false );
+        			}
+				}
+    		);
+		}
+
+
+	</script>
+</body>
+
+</html>
