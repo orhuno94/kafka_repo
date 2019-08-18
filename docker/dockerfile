@@ -1,0 +1,21 @@
+FROM orhunozogul94/log_app
+
+# Define mountable directories.
+VOLUME ["/data/db"]
+
+# Define working directory.
+WORKDIR /data
+
+# Define default command.
+CMD ["mongod"]
+
+
+# Set the working directory to /app
+WORKDIR /app
+
+# Copy the current directory contents into the container at /app
+COPY ./app/ /app
+
+EXPOSE 8080
+
+CMD /app/startup.sh 
